@@ -1,0 +1,15 @@
+{
+  "npmClient": "yarn",
+  "packages": [
+    "packages/app/*",
+    "packages/shared/*"
+  ],
+  "command": {
+    "publish": {
+      "npmClient": "npm",
+      "verifyAccess": false
+    }
+  },
+  "version": "independent",
+  "useWorkspaces": true
+}

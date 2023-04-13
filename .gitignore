@@ -1,0 +1,33 @@
+.DS_Store
+node_modules
+**/dist/
+/public
+/storybook-static
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Editor directories and files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Workspaces
+packages/*/coverage
+packages/*/dist
+packages/*/node_modules
+**/.nuxt/
+lerna-debug.log
+*.code-workspace
+
+coverage
+.eslintcache
+
+.nuxt-storybook
+storybook-static

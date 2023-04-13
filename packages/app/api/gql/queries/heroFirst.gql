@@ -1,0 +1,21 @@
+query heroFirst($path: String!) {
+    heroFirst(path: $path) {
+        data {
+            tagline
+            title
+            description
+            btnType
+            btnText
+            btnLink
+            btnLinkTarget
+            imgMobile {
+                src
+                alt
+            }
+            imgDesktop {
+                src
+                alt
+            }
+        }
+    }
+}

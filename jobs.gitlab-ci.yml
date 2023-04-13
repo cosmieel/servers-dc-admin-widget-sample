@@ -1,0 +1,197 @@
+include:
+  - local: rules.gitlab-ci.yml
+  - project: 'devops/ci-common'
+    ref: production
+    file:
+      - '/gitlab-pipe/extends.yml'
+  - project: 'serversdc/sdc-docker'
+    ref: master
+    file:
+      - '/gitlab-ci/common-base.yml'
+      - '/gitlab-ci/common.yml'
+
+# Templates for jobs
+.update-ts-before-script-common: &update-ts-before-script-common
+  - |-
+    give_back_post_data=$(cat << JSON
+    {
+      "username": "TS",
+      "avatar_url": "https://boudreault.ca/4.png",
+      "embeds": [
+        {
+          "title": ":green_circle:  $SERVICENAME",
+          "description": "$GITLAB_USER_NAME ($GITLAB_USER_LOGIN) освобождает ${ts_number}-ую тску для [$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME](https://git.reg.ru/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME)"
+        }
+      ]
+    }
+    JSON
+    )
+  - |-
+    take_post_data=$(cat << JSON
+    {
+      "username": "TS",
+      "avatar_url": "https://boudreault.ca/4.png",
+      "embeds": [
+        {
+          "title": ":red_circle:  $SERVICENAME",
+          "description": "$GITLAB_USER_NAME ($GITLAB_USER_LOGIN) берёт ${ts_number}-ую тску для ветки [$CI_COMMIT_REF_NAME](https://git.reg.ru/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME/-/tree/$CI_COMMIT_REF_NAME/$PACKAGE_PATH) в [$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME](https://git.reg.ru/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME)"
+        }
+      ]
+    }
+    JSON
+    )
+  - take_ts_reqex="s/(\/${CI_PROJECT_NAMESPACE}\/${CI_PROJECT_TITLE}\/${SERVICENAME}\/).*(\:).*[^\S]/\1${CI_COMMIT_REF_NAME}\2${CI_PIPELINE_ID}/"
+  - give_back_ts_regex="s/(\/${CI_PROJECT_NAMESPACE}\/${CI_PROJECT_TITLE}\/${SERVICENAME}\/).*(\:).*[^\S]/\1master\2latest/"
+  - export regex=$( [[ $CI_JOB_NAME == take-ts* ]] && echo $take_ts_reqex || echo $give_back_ts_regex )
+  - export post_data=$( [[ $CI_JOB_NAME == take-ts* ]] && echo $take_post_data || echo $give_back_post_data )
+
+.update-ts-script-common: &update-ts-script-common
+  - cd ../sdc-docker
+  - sed -i -r ${regex} docker-compose.yml
+  - docker-compose stop ${DEPENDENT_DOCKER_SERVICES} && docker-compose rm -f ${DEPENDENT_DOCKER_SERVICES}
+  - docker rmi -f $(docker images | grep ${DEPENDENT_DOCKER_IMAGES} | awk '{print $3}')
+  - docker-compose pull ${DEPENDENT_DOCKER_SERVICES}
+  - GQL_ENDPOINT=${STAGING_GQL_ENDPOINT} GQL_WS_ENDPOINT=${STAGING_GQL_WS_ENDPOINT} docker-compose up -d ${DEPENDENT_DOCKER_SERVICES}
+  - curl --fail --progress-bar -H Content-Type:application/json -d "${post_data}" https://discordapp.com/api/webhooks/757892170781949963/Ef03yxzryv7NbYbM8Y5WOmX7KjjhUYNPBsCVOFxiIewrDDzv7_lmw3r56C-UNStcYTTW
+
+.build-package-master:
+  stage: build
+  variables:
+    CI_BUILD_NAME1: "$CI_REGISTRY/$CI_PROJECT_PATH/$SERVICENAME/$CI_COMMIT_REF_NAME:$CI_PIPELINE_ID"
+    CI_BUILD_DOCKERFILEPATH1: $PACKAGE_PATH/Dockerfile
+    CI_BUILD_ARG1: "TS=ts"
+  script:
+    - !reference [.easy-build-image-template, script]
+  extends:
+    - .only-master
+
+.build-package-production:
+  stage: build
+  variables:
+    CI_BUILD_NAME1: "$CI_REGISTRY/$CI_PROJECT_PATH/$SERVICENAME/$CI_COMMIT_REF_NAME:$CI_PIPELINE_ID"
+    CI_BUILD_DOCKERFILEPATH1: $PACKAGE_PATH/Dockerfile
+  script:
+    - !reference [.easy-build-image-template, script]
+  extends:
+    - .only-production
+
+.build-ts:
+  stage: build
+  variables:
+    CI_BUILD_NAME1: "$CI_REGISTRY/$CI_PROJECT_PATH/$SERVICENAME/$CI_COMMIT_REF_NAME:$CI_PIPELINE_ID"
+    CI_BUILD_DOCKERFILEPATH1: $PACKAGE_PATH/Dockerfile.ci
+    CI_BUILD_ARG1: "TS=ts"
+  script:
+    - !reference [.easy-build-image-template, script]
+  extends:
+    - .only-merge-request
+
+.jest-package:
+  stage: test
+  image: docker.reg.ru/serversdc/node:14.17-alpine
+  before_script:
+    - cd $PACKAGE_PATH
+  script:
+    - apk add -X https://mirror.yandex.ru/mirrors/alpine/v3.13/main/ git
+    - yarn install --frozen-lockfile
+    - yarn run test
+  coverage: /All files\s*\|\s*([\d\.]+)/
+  extends:
+    - .only-master-and-production
+
+.eslint-package:
+  stage: test
+  image: docker.reg.ru/serversdc/node:14.17-alpine
+  before_script:
+    - cd $PACKAGE_PATH
+  script:
+    - apk add -X https://mirror.yandex.ru/mirrors/alpine/v3.13/main/ git
+    - yarn install --frozen-lockfile
+    - yarn run lint
+  extends:
+    - .only-master-and-production
+
+.publish-libs:
+  stage: deploy
+  image: docker.reg.ru/serversdc/node:14.17-alpine
+  before_script:
+    - apk add -X https://mirror.yandex.ru/mirrors/alpine/v3.13/main/ git
+    - git config --global user.name "${GITLAB_USER_NAME}"
+    - git config --global user.email "${GITLAB_USER_EMAIL}"
+    - npm set registry https://verdaccio.dev.reg.ru/
+  script:
+    - yarn global add lerna@3.22.1
+    - yarn global add husky@6.0.0
+    - git remote set-url origin https://$GL_ACCESS_BOT:$GL_ACCESS_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_PATH.git
+    - git fetch origin +refs/heads/master:refs/remotes/origin/master
+    - git checkout master
+    - echo "registry=https://verdaccio.dev.reg.ru/" > .npmrc
+    - echo "//verdaccio.dev.reg.ru/:_authToken=\"$VERDACCIO_AUTH_TOKEN\"" >> .npmrc
+    - lerna publish --conventional-commits --registry=https://verdaccio.dev.reg.ru/ --no-private --yes
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "master"'
+    - when: never
+
+.deploy-package:
+  stage: deploy
+  variables:
+    GIT_STRATEGY: none
+    CI_DEPLOY_SERVICENAME1: sdcjs-$SERVICENAME
+    CI_DEPLOY_IMAGE1: $CI_REGISTRY/$CI_PROJECT_PATH/$SERVICENAME/$CI_COMMIT_REF_NAME:$CI_PIPELINE_ID
+  script:
+    - !reference [.easy-deploy-template, script]
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "production"'
+      when: always
+    - when: never
+
+.update-ts:
+  stage: deploy
+  when: manual
+  variables:
+    staging_server_key: $STAGING_SERVER_PRIVATE_KEY
+    ts_number: '1'
+  before_script:
+    - *update-ts-before-script-common
+    - export STAGING_USER='server24'
+    - export STAGING_HOST='server24.int.reg.ru'
+    - export STAGING_GQL_ENDPOINT='https://server24.int.reg.ru/graphql'
+    - export STAGING_GQL_WS_ENDPOINT='wss://server24.int.reg.ru/graphql'
+  script: *update-ts-script-common
+  tags:
+    - server24
+    - ts1
+
+.update-ts-1:
+  stage: deploy
+  when: manual
+  variables:
+    staging_server_key: $STAGING_SERVER_2_PRIVATE_KEY
+    ts_number: '2'
+  before_script:
+    - *update-ts-before-script-common
+    - export STAGING_USER='server24'
+    - export STAGING_HOST='sdc1.int.reg.ru'
+    - export STAGING_GQL_ENDPOINT='https://dev.server24.ru/graphql'
+    - export STAGING_GQL_WS_ENDPOINT='wss://sdc1.int.reg.ru/graphql'
+  script: *update-ts-script-common
+  tags:
+    - server24
+    - ts2
+
+.update-storybook:
+  stage: deploy
+  image: docker.reg.ru/serversdc/node:14.17-alpine
+  when: manual
+  cache:
+    paths:
+    - node_modules/
+  script:
+    - mkdir -p public
+    - yarn
+    - yarn storybook:build
+    - mv packages/shared/storybook/storybook-static/* public
+  artifacts:
+    paths:
+      - public
+    expire_in: 10 days

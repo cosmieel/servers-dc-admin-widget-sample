@@ -1,0 +1,221 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: $CI_COMMIT_MESSAGE =~ /skip-all-pipelines/
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
+stages:
+  - build
+  - test
+  - deploy
+
+include:
+  - local: jobs.gitlab-ci.yml
+  - local: services.gitlab-ci.yml
+
+# Jobs
+
+# build
+
+build-account-master:
+  extends:
+    - .account
+    - .build-package-master
+
+build-site-master:
+  extends:
+    - .site
+    - .build-package-master
+
+build-account-ts:
+  extends:
+    - .account
+    - .build-ts
+
+build-site-ts:
+  extends:
+    - .site
+    - .build-ts
+
+build-account-production:
+  extends:
+    - .account
+    - .build-package-production
+
+build-site-production:
+  extends:
+    - .site
+    - .build-package-production
+
+# jest
+
+jest-account:
+  extends:
+    - .account
+    - .jest-package
+
+jest-site:
+  extends:
+    - .site
+    - .jest-package
+
+# eslint
+
+eslint-account:
+  extends:
+    - .account
+    - .eslint-package
+
+eslint-site:
+  extends:
+    - .site
+    - .eslint-package
+
+# следующая строка комментария служит ориентиром
+# для шаблона ./_templates/shared-lib-template/new/.gitlab-ci.yml.ejs.t трогайте аккуратно
+# libs jest and eslint
+jest-jivo-middleware:
+  extends:
+    - .jivo-middleware
+    - .jest-package
+
+eslint-jivo-middleware:
+  extends:
+    - .jivo-middleware
+    - .eslint-package
+
+jest-settings:
+  extends:
+    - .settings
+    - .jest-package
+
+eslint-settings:
+  extends:
+    - .settings
+    - .eslint-package
+
+jest-jwt:
+  extends:
+    - .jwt
+    - .jest-package
+
+eslint-jwt:
+  extends:
+    - .jwt
+    - .eslint-package
+
+jest-login-widget:
+  extends:
+    - .login-widget
+    - .jest-package
+
+eslint-login-widget:
+  extends:
+    - .login-widget
+    - .eslint-package
+
+eslint-storybook:
+  extends:
+    - .storybook
+    - .eslint-package
+
+jest-ui:
+  extends:
+    - .ui
+    - .jest-package
+
+eslint-ui:
+  extends:
+    - .ui
+    - .eslint-package
+
+jest-themable:
+  extends:
+    - .themable
+    - .jest-package
+
+eslint-themable:
+  extends:
+    - .themable
+    - .eslint-package
+
+# deploy
+
+publish-libs:
+  extends:
+    - .publish-libs
+
+# uncomment when ready to deploy to production
+
+deploy-account:
+  extends:
+    - .account
+    - .deploy-package
+
+deploy-site:
+  extends:
+    - .site
+    - .deploy-package
+
+take-ts-dev1-account:
+  extends:
+    - .account
+    - .take-ts-server24-int-1
+
+take-ts-dev2-account:
+  extends:
+    - .account
+    - .take-ts-server24-int-2
+
+take-ts-dev1-site:
+  extends:
+    - .site
+    - .take-ts-server24-int-1
+
+take-ts-dev2-site:
+  extends:
+    - .site
+    - .take-ts-server24-int-2
+
+give-back-ts-dev1-account:
+  extends:
+    take-ts-dev1-account
+
+give-back-ts-dev2-account:
+  extends:
+    take-ts-dev2-account
+
+give-back-ts-dev1-site:
+  extends:
+    take-ts-dev1-site
+
+give-back-ts-dev2-site:
+  extends:
+    take-ts-dev2-site
+
+take-ts-dev-site:
+  extends:
+    - .site
+    - .take-ts-dev
+
+give-back-ts-dev-site:
+  extends:
+    - take-ts-dev-site
+
+take-ts-dev-account:
+  extends:
+    - .account
+    - .take-ts-dev
+
+give-back-ts-dev-account:
+  extends:
+    - take-ts-dev-account
+
+pages:
+  extends:
+    - .update-storybook
